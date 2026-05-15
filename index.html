@@ -122,6 +122,65 @@
       transform: translateY(0);
     }
 
+    .upgrade-panel {
+      position: absolute;
+      inset: 18px;
+      z-index: 4;
+      display: none;
+      align-content: center;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid rgba(228, 183, 91, 0.72);
+      background: rgba(11, 13, 17, 0.94);
+      box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+    }
+
+    .upgrade-panel.show {
+      display: grid;
+    }
+
+    .upgrade-panel h2 {
+      margin: 0;
+      color: #f3dfae;
+      font-size: clamp(1.05rem, 3vw, 1.45rem);
+      text-align: center;
+    }
+
+    .upgrade-panel p {
+      margin: 0;
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.84rem;
+    }
+
+    .upgrade-options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .upgrade-card {
+      min-height: 112px;
+      padding: 10px;
+      display: grid;
+      align-content: start;
+      gap: 7px;
+      text-align: left;
+      background: #20262f;
+      border-color: #46515e;
+    }
+
+    .upgrade-card strong {
+      color: #ffe0a0;
+      font-size: 0.95rem;
+    }
+
+    .upgrade-card span {
+      color: var(--muted);
+      font-size: 0.74rem;
+      line-height: 1.25;
+    }
+
     aside {
       padding: 12px;
       display: grid;
@@ -310,6 +369,8 @@
         min-height: 52px;
         font-size: 1.45rem;
       }
+      .upgrade-options { grid-template-columns: 1fr; }
+      .upgrade-card { min-height: 78px; }
     }
 
     @media (max-width: 520px) {
@@ -337,6 +398,11 @@
       <div class="stage">
         <canvas id="game" width="736" height="544" aria-label="SnakeButAnnoying game canvas"></canvas>
         <div class="banner" id="banner">Press Start</div>
+        <div class="upgrade-panel" id="upgradePanel" aria-live="polite">
+          <h2>Floor Cleared</h2>
+          <p>Pick one upgrade before the next layer gets worse.</p>
+          <div class="upgrade-options" id="upgradeOptions"></div>
+        </div>
       </div>
 
       <aside>
@@ -398,6 +464,8 @@
       speed: document.getElementById("speed"),
       state: document.getElementById("stateText"),
       banner: document.getElementById("banner"),
+      upgradePanel: document.getElementById("upgradePanel"),
+      upgradeOptions: document.getElementById("upgradeOptions"),
       captureLine: document.getElementById("captureLine"),
       captureFill: document.getElementById("captureFill"),
       remainingLine: document.getElementById("remainingLine"),
@@ -494,6 +562,7 @@
       paused: false,
       gameOver: false,
       floorClear: false,
+      awaitingUpgrade: false,
       countdown: false,
       startToken: 0,
       lastTime: 0,
@@ -502,7 +571,15 @@
       messageTimer: 0,
       secretUnlocked: localStorage.getItem(SECRET_KEY) === "yes",
       secretFileReady: false,
-      deaths: Number(localStorage.getItem(DEATHS_KEY) || 0)
+      deaths: Number(localStorage.getItem(DEATHS_KEY) || 0),
+      upgrades: {
+        foodGrow: 0,
+        scoreBonus: 0,
+        slowBase: 0,
+        goalReduction: 0,
+        startShield: 0,
+        goldChance: 0
+      }
     };
 
     function randInt(min, max) {
@@ -760,7 +837,7 @@
 
     function spawnPickups() {
       spawnFood();
-      game.gold = Math.random() < 0.45 ? randomEmptyTile() : null;
+      game.gold = Math.random() < Math.min(0.85, 0.45 + game.upgrades.goldChance) ? randomEmptyTile() : null;
       if (game.traps.length > 0) {
         game.potion = randomEmptyTile();
         game.potionKind = "Shield";
@@ -812,7 +889,12 @@
       }
       game.effect = null;
       game.effectTicks = 0;
+      if (game.upgrades.startShield > 0) {
+        game.effect = "Shield";
+        game.effectTicks = 1;
+      }
       game.foodEaten = 0;
+      game.foodGoal = Math.max(7, 10 - game.upgrades.goalReduction);
       game.food = null;
       game.gold = null;
       game.potion = null;
@@ -825,7 +907,7 @@
       spawnHazards();
       spawnPickups();
       game.exit = farthestTile(game.snake[0]);
-      game.tickMs = Math.max(90, 220 - game.floor * 9);
+      game.tickMs = Math.max(90, 220 - game.floor * 9 + game.upgrades.slowBase);
       updateHud();
       draw();
     }
@@ -837,8 +919,18 @@
       game.paused = false;
       game.gameOver = false;
       game.floorClear = false;
+      game.awaitingUpgrade = false;
       game.countdown = false;
       game.startToken++;
+      game.upgrades = {
+        foodGrow: 0,
+        scoreBonus: 0,
+        slowBase: 0,
+        goalReduction: 0,
+        startShield: 0,
+        goldChance: 0
+      };
+      ui.upgradePanel.classList.remove("show");
       game.acc = 0;
       setupFloor(false);
       showMessage("Press Start", 5000);
@@ -848,6 +940,7 @@
     function startGame() {
       audio.ensure();
       if (game.gameOver) newRun();
+      if (game.awaitingUpgrade) return;
       if (game.running || game.countdown) return;
       game.countdown = true;
       game.startToken++;
@@ -873,7 +966,7 @@
     }
 
     function pauseGame() {
-      if (!game.running || game.gameOver || game.countdown) return;
+      if (!game.running || game.gameOver || game.countdown || game.awaitingUpgrade) return;
       game.paused = !game.paused;
       ui.state.textContent = game.paused ? "Paused" : "Exploring";
       if (game.paused) showMessage("Paused", 999999);
@@ -887,7 +980,7 @@
       game.inputQueue.push(dir);
       if (game.inputQueue.length > 3) game.inputQueue.shift();
       game.nextDir = game.inputQueue[0] || dir;
-      if (!game.running && !game.gameOver && !game.countdown) startGame();
+      if (!game.running && !game.gameOver && !game.countdown && !game.awaitingUpgrade) startGame();
     }
 
     function hasShield() {
@@ -904,7 +997,8 @@
     }
 
     function score(points) {
-      game.score += hasDouble() ? points * 2 : points;
+      const boosted = points + game.upgrades.scoreBonus;
+      game.score += hasDouble() ? boosted * 2 : boosted;
       if (game.score > game.best) {
         game.best = game.score;
         localStorage.setItem(STORAGE_KEY, String(game.best));
@@ -936,19 +1030,72 @@
       audio.play("floor");
       showMessage("Floor Captured", 1400);
       ui.state.textContent = "Floor captured";
-      setTimeout(() => {
-        game.floor++;
-        if (game.floor >= 3) unlockSecret();
-        game.floorClear = false;
-        setupFloor(true);
-        game.running = true;
-        ui.state.textContent = "Exploring";
-        showMessage("Floor " + game.floor, 900);
-      }, 1150);
+      setTimeout(showUpgradePage, 900);
+    }
+
+    const upgradePool = [
+      {
+        name: "Iron Gut",
+        text: "Food grows you by one extra segment.",
+        apply: () => game.upgrades.foodGrow++
+      },
+      {
+        name: "Greedy Fang",
+        text: "Every score event is worth 8 more points.",
+        apply: () => game.upgrades.scoreBonus += 8
+      },
+      {
+        name: "Heavy Boots",
+        text: "Base movement slows down a little.",
+        apply: () => game.upgrades.slowBase += 12
+      },
+      {
+        name: "Snack Sense",
+        text: "Each floor needs one less food, down to 7.",
+        apply: () => game.upgrades.goalReduction = Math.min(3, game.upgrades.goalReduction + 1)
+      },
+      {
+        name: "Cracked Charm",
+        text: "Start each floor with a one-hit shield.",
+        apply: () => game.upgrades.startShield = 1
+      },
+      {
+        name: "Gold Smell",
+        text: "More gold appears in the dungeon.",
+        apply: () => game.upgrades.goldChance += 0.18
+      }
+    ];
+
+    function showUpgradePage() {
+      game.awaitingUpgrade = true;
+      ui.banner.classList.remove("show");
+      ui.upgradeOptions.innerHTML = "";
+      for (const upgrade of shuffle([...upgradePool]).slice(0, 3)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "upgrade-card";
+        button.innerHTML = `<strong>${upgrade.name}</strong><span>${upgrade.text}</span>`;
+        button.addEventListener("click", () => chooseUpgrade(upgrade));
+        ui.upgradeOptions.appendChild(button);
+      }
+      ui.upgradePanel.classList.add("show");
+    }
+
+    function chooseUpgrade(upgrade) {
+      upgrade.apply();
+      game.awaitingUpgrade = false;
+      ui.upgradePanel.classList.remove("show");
+      game.floor++;
+      if (game.floor >= 3) unlockSecret();
+      game.floorClear = false;
+      setupFloor(true);
+      game.running = true;
+      ui.state.textContent = "Exploring";
+      showMessage("Floor " + game.floor, 900);
     }
 
     function tick() {
-      if (!game.running || game.paused || game.gameOver || game.floorClear) return;
+      if (!game.running || game.paused || game.gameOver || game.floorClear || game.awaitingUpgrade) return;
 
       game.dir = game.inputQueue.shift() || game.nextDir;
       game.nextDir = game.inputQueue[0] || game.dir;
@@ -979,7 +1126,7 @@
       game.snake.unshift(next);
 
       if (willEatFood) {
-        game.grow += 1;
+        game.grow += 1 + game.upgrades.foodGrow;
         game.foodEaten++;
         score(10);
         audio.play("food");
