@@ -579,7 +579,8 @@
       floor: "audio/sfx/floor.ogg",
       shield: "audio/sfx/shield.ogg",
       shop: "audio/sfx/shop.ogg",
-      dart: "audio/sfx/dart.ogg"
+      dart: "audio/sfx/dart.ogg",
+      timer: "audio/sfx/shield.ogg"
     };
 
     class AudioKit {
@@ -649,6 +650,7 @@
           floor: () => { this.beep(430, 0.08, "square"); setTimeout(() => this.beep(640, 0.08, "square"), 80); setTimeout(() => this.beep(860, 0.14, "square"), 160); },
           shop: () => this.beep(620, 0.08, "triangle"),
           dart: () => this.beep(780, 0.04, "sawtooth", 0.025),
+          timer: () => this.beep(620, 0.08, "square", 0.03),
           shield: () => this.beep(260, 0.09, "sine")
         };
         sounds[name]?.();
@@ -1090,7 +1092,7 @@
       spawnHazards();
       spawnPickups();
       game.exit = farthestTile(game.snake[0]);
-      game.tickMs = Math.max(90, 220 - game.floor * 9 + game.upgrades.slowBase);
+      game.tickMs = Math.max(135, 330 - game.floor * 13.5 + game.upgrades.slowBase * 1.5);
       updateHud();
       draw();
     }
@@ -1147,10 +1149,12 @@
       if (token !== game.startToken || game.gameOver) return;
       if (n > 0) {
         showMessage(String(n), 900);
+        audio.play("timer");
         setTimeout(() => countdown(token, n - 1), 1000);
         return;
       }
       showMessage("Go", 450);
+      audio.play("timer");
       game.countdown = false;
       game.running = true;
       game.acc = 0;
