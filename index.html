@@ -516,6 +516,44 @@
     const TILE = 32;
     const WALL = 0;
     const FLOOR = 1;
+    const BIOMES = [
+      {
+        name: "Crypt",
+        bg: "#07090d", wall: "#151a20", wallA: "#1d232b", wallB: "#202832",
+        floor: "#252a30", floorA: "#2d333a", floorB: "#282e35",
+        trapBase: "#5a2a31", trap: "#d17168", enemy: "#6e394c", enemyEye: "#f1bcc9",
+        dart: "#c9ced7", exit: "#7b8490", exitOn: "#e4b75b",
+        snakeHead: "#b8f0a0", snakeA: "#78c783", snakeB: "#62ad72", snakeEye: "#132015",
+        accent: "#e4b75b", good: "#7fd089", pageBg: "#0d1014", panel: "#171b21", panel2: "#20262f"
+      },
+      {
+        name: "Moss",
+        bg: "#07100d", wall: "#142018", wallA: "#1c2d20", wallB: "#213526",
+        floor: "#233127", floorA: "#2c3d2e", floorB: "#26362a",
+        trapBase: "#51332f", trap: "#e18662", enemy: "#5b4a77", enemyEye: "#d8ccff",
+        dart: "#d5e6be", exit: "#8da579", exitOn: "#b8e06b",
+        snakeHead: "#d5f5a1", snakeA: "#92cf6b", snakeB: "#68aa56", snakeEye: "#17220f",
+        accent: "#b8d86b", good: "#8bd58a", pageBg: "#0b140f", panel: "#141d18", panel2: "#1e2b22"
+      },
+      {
+        name: "Ember",
+        bg: "#140908", wall: "#241614", wallA: "#35201b", wallB: "#3d251f",
+        floor: "#302520", floorA: "#3c2b24", floorB: "#352820",
+        trapBase: "#5d241d", trap: "#ff7c55", enemy: "#7b2632", enemyEye: "#ffd1b7",
+        dart: "#ffd08a", exit: "#a76b41", exitOn: "#ffbd62",
+        snakeHead: "#ffe08b", snakeA: "#d8954c", snakeB: "#b96d39", snakeEye: "#27150c",
+        accent: "#ffad5a", good: "#d8c56b", pageBg: "#140d0b", panel: "#211715", panel2: "#2e211c"
+      },
+      {
+        name: "Frost",
+        bg: "#071018", wall: "#121d28", wallA: "#1b2a39", wallB: "#213246",
+        floor: "#202d37", floorA: "#293946", floorB: "#25333e",
+        trapBase: "#24465b", trap: "#7bd6ed", enemy: "#31416e", enemyEye: "#d8f2ff",
+        dart: "#f0fbff", exit: "#85a8bd", exitOn: "#9ee7ff",
+        snakeHead: "#c6f4ff", snakeA: "#75b9ce", snakeB: "#5b9bad", snakeEye: "#0d1b23",
+        accent: "#8fd7f4", good: "#94d6b2", pageBg: "#09111a", panel: "#131c25", panel2: "#1c2a36"
+      }
+    ];
     const DIRS = {
       up: { x: 0, y: -1 },
       down: { x: 0, y: 1 },
@@ -658,6 +696,20 @@
       ui.banner.textContent = text;
       ui.banner.classList.add("show");
       game.messageTimer = ms;
+    }
+
+    function currentBiome() {
+      return BIOMES[Math.floor((game.floor - 1) / 3) % BIOMES.length];
+    }
+
+    function applyBiome() {
+      const b = currentBiome();
+      const root = document.documentElement.style;
+      root.setProperty("--bg", b.pageBg);
+      root.setProperty("--panel", b.panel);
+      root.setProperty("--panel-2", b.panel2);
+      root.setProperty("--accent", b.accent);
+      root.setProperty("--good", b.good);
     }
 
     function createEmptyMap(w, h) {
@@ -922,6 +974,7 @@
     }
 
     function setupFloor(keepScore = true, attempts = 0) {
+      applyBiome();
       const dungeon = generateDungeon(game.floor);
       game.map = dungeon.map;
       game.width = dungeon.w;
@@ -1263,7 +1316,7 @@
       setupFloor(true);
       game.running = true;
       ui.state.textContent = "Exploring";
-      showMessage("Floor " + game.floor, 900);
+      showMessage("Floor " + game.floor + " - " + currentBiome().name, 1000);
     }
 
     function tick() {
@@ -1481,7 +1534,7 @@
       ui.speed.textContent = game.effect === "Slow Time" ? "Slow" : game.effect === "Haste" ? "Haste" : game.tickMs < 105 ? "Fast" : "Normal";
       ui.captureLine.textContent = `Food ${game.foodEaten} / ${game.foodGoal} (${percent}%)`;
       ui.captureFill.style.width = `${Math.min(100, percent)}%`;
-      ui.remainingLine.textContent = `${Math.max(0, game.foodGoal - game.foodEaten)} food remain`;
+      ui.remainingLine.textContent = `${Math.max(0, game.foodGoal - game.foodEaten)} food remain - ${currentBiome().name}`;
       updateDownloadUnlock();
     }
 
@@ -1491,27 +1544,28 @@
     }
 
     function draw() {
+      const b = currentBiome();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#07090d";
+      ctx.fillStyle = b.bg;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       for (let y = 0; y < game.height; y++) {
         for (let x = 0; x < game.width; x++) {
           if (game.map[y][x] === WALL) {
-            drawRect(x, y, "#151a20");
-            ctx.fillStyle = (x + y) % 2 ? "#1d232b" : "#202832";
+            drawRect(x, y, b.wall);
+            ctx.fillStyle = (x + y) % 2 ? b.wallA : b.wallB;
             ctx.fillRect(x * TILE + 2, y * TILE + 2, TILE - 4, TILE - 4);
           } else {
-            drawRect(x, y, "#252a30");
-            ctx.fillStyle = (x * 7 + y * 3) % 5 === 0 ? "#2d333a" : "#282e35";
+            drawRect(x, y, b.floor);
+            ctx.fillStyle = (x * 7 + y * 3) % 5 === 0 ? b.floorA : b.floorB;
             ctx.fillRect(x * TILE + 2, y * TILE + 2, TILE - 4, TILE - 4);
           }
         }
       }
 
       for (const trap of game.traps) {
-        drawRect(trap.x, trap.y, "#5a2a31", 6);
-        ctx.fillStyle = "#d17168";
+        drawRect(trap.x, trap.y, b.trapBase, 6);
+        ctx.fillStyle = b.trap;
         ctx.beginPath();
         ctx.moveTo(trap.x * TILE + 16, trap.y * TILE + 6);
         ctx.lineTo(trap.x * TILE + 23, trap.y * TILE + 23);
@@ -1521,7 +1575,7 @@
       }
 
       drawPickup(game.food, "#d85858", "food");
-      drawPickup(game.gold, "#e4b75b", "gold");
+      drawPickup(game.gold, b.accent, "gold");
       drawPickup(game.potion, "#75a7d8", "potion");
       drawPickup(game.haste, "#ef8f45", "haste");
       drawExit();
@@ -1529,7 +1583,7 @@
       for (const dart of game.projectiles) {
         const x = dart.x * TILE;
         const y = dart.y * TILE;
-        ctx.fillStyle = "#c9ced7";
+        ctx.fillStyle = b.dart;
         if (dart.dir === "left" || dart.dir === "right") {
           ctx.fillRect(x + 7, y + 14, 18, 4);
           ctx.fillRect(dart.dir === "right" ? x + 21 : x + 7, y + 11, 4, 10);
@@ -1540,8 +1594,8 @@
       }
 
       for (const enemy of game.enemies) {
-        drawRect(enemy.x, enemy.y, "#6e394c", 5);
-        ctx.fillStyle = "#f1bcc9";
+        drawRect(enemy.x, enemy.y, b.enemy, 5);
+        ctx.fillStyle = b.enemyEye;
         ctx.fillRect(enemy.x * TILE + 10, enemy.y * TILE + 10, 4, 4);
         ctx.fillRect(enemy.x * TILE + 18, enemy.y * TILE + 10, 4, 4);
       }
@@ -1549,10 +1603,10 @@
       for (let i = game.snake.length - 1; i >= 0; i--) {
         const p = game.snake[i];
         const head = i === 0;
-        const color = head ? "#b8f0a0" : i % 2 ? "#78c783" : "#62ad72";
+        const color = head ? b.snakeHead : i % 2 ? b.snakeA : b.snakeB;
         drawRect(p.x, p.y, color, head ? 3 : 5);
         if (head) {
-          ctx.fillStyle = "#132015";
+          ctx.fillStyle = b.snakeEye;
           ctx.fillRect(p.x * TILE + 10, p.y * TILE + 10, 4, 4);
           ctx.fillRect(p.x * TILE + 18, p.y * TILE + 10, 4, 4);
         }
@@ -1640,15 +1694,16 @@
     }
 
     function drawExit() {
+      const b = currentBiome();
       if (!game.exit) return;
       const x = game.exit.x * TILE;
       const y = game.exit.y * TILE;
       ctx.fillStyle = "#1c2229";
       ctx.fillRect(x + 6, y + 6, TILE - 12, TILE - 12);
-      ctx.strokeStyle = game.floorClear ? "#e4b75b" : "#56616e";
+      ctx.strokeStyle = game.floorClear ? b.exitOn : "#56616e";
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 8, y + 8, TILE - 16, TILE - 16);
-      ctx.fillStyle = game.floorClear ? "#e4b75b" : "#7b8490";
+      ctx.fillStyle = game.floorClear ? b.exitOn : b.exit;
       ctx.fillRect(x + 12, y + 12, 8, 3);
       ctx.fillRect(x + 12, y + 18, 12, 3);
     }
