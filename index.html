@@ -565,16 +565,51 @@
     const SECRET_KEY = "dungeonCoilSecretUnlocked";
     const DEATHS_KEY = "dungeonCoilDeaths";
     const SECRET_FILE = "GoodFuckingLuckYouWillNeedIt.wav";
+    const MUSIC_TRACKS = [
+      "audio/HeatleybrosSoundtrack.mp3",
+      "audio/HeatleybrosSoundtrack2.mp3",
+      "audio/HeatleybrosSoundtrack3.mp3"
+    ];
+    const SFX_FILES = {
+      food: "audio/sfx/food.ogg",
+      gold: "audio/sfx/gold.ogg",
+      potion: "audio/sfx/potion.ogg",
+      haste: "audio/sfx/potion.ogg",
+      hit: "audio/sfx/hit.ogg",
+      floor: "audio/sfx/floor.ogg",
+      shield: "audio/sfx/shield.ogg",
+      shop: "audio/sfx/shop.ogg",
+      dart: "audio/sfx/dart.ogg"
+    };
 
     class AudioKit {
       constructor() {
         this.ctx = null;
         this.muted = false;
+        this.enabled = false;
+        this.musicIndex = -1;
+        this.music = MUSIC_TRACKS.map(src => {
+          const track = new Audio(src);
+          track.loop = true;
+          track.preload = "auto";
+          track.volume = 0.28;
+          return track;
+        });
+        this.gameOver = new Audio("audio/GameOver.mp3");
+        this.gameOver.preload = "auto";
+        this.gameOver.volume = 0.72;
+        this.sfx = Object.fromEntries(Object.entries(SFX_FILES).map(([name, src]) => {
+          const sound = new Audio(src);
+          sound.preload = "auto";
+          sound.volume = 0.72;
+          return [name, sound];
+        }));
       }
 
       ensure() {
         if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         if (this.ctx.state === "suspended") this.ctx.resume();
+        this.enabled = true;
       }
 
       beep(freq, duration = 0.08, type = "square", gain = 0.035) {
@@ -593,16 +628,58 @@
       }
 
       play(name) {
+        if (this.muted) return;
+        const file = this.sfx[name];
+        if (file) {
+          const sound = file.cloneNode();
+          sound.volume = file.volume;
+          sound.play().catch(() => this.playFallback(name));
+          return;
+        }
+        this.playFallback(name);
+      }
+
+      playFallback(name) {
         const sounds = {
           food: () => this.beep(520, 0.09, "triangle"),
-      gold: () => { this.beep(690, 0.06, "sine"); setTimeout(() => this.beep(920, 0.07, "sine"), 45); },
-      potion: () => { this.beep(360, 0.08, "triangle"); setTimeout(() => this.beep(620, 0.1, "triangle"), 70); },
-      haste: () => { this.beep(820, 0.05, "square"); setTimeout(() => this.beep(1040, 0.07, "square"), 55); },
+          gold: () => { this.beep(690, 0.06, "sine"); setTimeout(() => this.beep(920, 0.07, "sine"), 45); },
+          potion: () => { this.beep(360, 0.08, "triangle"); setTimeout(() => this.beep(620, 0.1, "triangle"), 70); },
+          haste: () => { this.beep(820, 0.05, "square"); setTimeout(() => this.beep(1040, 0.07, "square"), 55); },
           hit: () => this.beep(120, 0.18, "sawtooth", 0.045),
           floor: () => { this.beep(430, 0.08, "square"); setTimeout(() => this.beep(640, 0.08, "square"), 80); setTimeout(() => this.beep(860, 0.14, "square"), 160); },
+          shop: () => this.beep(620, 0.08, "triangle"),
+          dart: () => this.beep(780, 0.04, "sawtooth", 0.025),
           shield: () => this.beep(260, 0.09, "sine")
         };
         sounds[name]?.();
+      }
+
+      setMuted(muted) {
+        this.muted = muted;
+        [...this.music, this.gameOver].forEach(track => track.muted = muted);
+        if (muted) this.music.forEach(track => track.pause());
+        else this.playMusicForFloor(game.floor);
+      }
+
+      playMusicForFloor(floor) {
+        if (this.muted || !this.enabled) return;
+        const index = Math.floor((floor - 1) / 3) % this.music.length;
+        if (index === this.musicIndex && !this.music[index].paused) return;
+        this.music.forEach((track, i) => {
+          if (i !== index) {
+            track.pause();
+            track.currentTime = 0;
+          }
+        });
+        this.musicIndex = index;
+        this.music[index].play().catch(() => {});
+      }
+
+      playGameOver() {
+        if (this.muted) return;
+        this.music.forEach(track => track.pause());
+        this.gameOver.currentTime = 0;
+        this.gameOver.play().catch(() => this.playFallback("hit"));
       }
     }
 
@@ -975,6 +1052,7 @@
 
     function setupFloor(keepScore = true, attempts = 0) {
       applyBiome();
+      audio.playMusicForFloor(game.floor);
       const dungeon = generateDungeon(game.floor);
       game.map = dungeon.map;
       game.width = dungeon.w;
@@ -1053,6 +1131,7 @@
     function startGame() {
       audio.ensure();
       if (game.gameOver) newRun();
+      audio.playMusicForFloor(game.floor);
       if (game.awaitingUpgrade) return;
       if (game.running || game.countdown) return;
       game.countdown = true;
@@ -1138,6 +1217,7 @@
       ui.state.textContent = "Run ended";
       showMessage(reason + " - Restart to delve again", 999999);
       audio.play("hit");
+      audio.playGameOver();
       updateHud();
     }
 
@@ -1301,6 +1381,7 @@
       if (game.coins < item.cost) return;
       game.coins -= item.cost;
       item.buy();
+      audio.play("shop");
       ui.shopLine.textContent = `Coins: ${game.coins}. Bought ${item.name}.`;
       renderShop();
       updateHud();
@@ -1314,6 +1395,7 @@
       if (game.floor >= 3) unlockSecret();
       game.floorClear = false;
       setupFloor(true);
+      audio.playMusicForFloor(game.floor);
       game.running = true;
       ui.state.textContent = "Exploring";
       showMessage("Floor " + game.floor + " - " + currentBiome().name, 1000);
@@ -1460,7 +1542,10 @@
           }
         }
       }
-      if (lanes.length) game.projectiles.push(lanes[randInt(0, lanes.length - 1)]);
+      if (lanes.length) {
+        game.projectiles.push(lanes[randInt(0, lanes.length - 1)]);
+        audio.play("dart");
+      }
     }
 
     function clearLine(from, to, dir) {
@@ -1778,7 +1863,7 @@
       startGame();
     });
     ui.mute.addEventListener("click", () => {
-      audio.muted = !audio.muted;
+      audio.setMuted(!audio.muted);
       ui.mute.textContent = audio.muted ? "Unmute" : "Mute";
     });
     ui.download.addEventListener("click", event => {
