@@ -476,6 +476,7 @@
       snake: [],
       dir: "right",
       nextDir: "right",
+      inputQueue: [],
       food: null,
       gold: null,
       potion: null,
@@ -728,6 +729,7 @@
       game.snake = picked.body;
       game.dir = picked.dir;
       game.nextDir = picked.dir;
+      game.inputQueue = [];
       game.grow = Math.max(0, 3 - game.snake.length);
       return true;
     }
@@ -806,6 +808,7 @@
         game.snake = [{ ...game.walkable[0] }];
         game.dir = "right";
         game.nextDir = "right";
+        game.inputQueue = [];
       }
       game.effect = null;
       game.effectTicks = 0;
@@ -878,8 +881,12 @@
     }
 
     function setDirection(dir) {
-      if (!DIRS[dir] || OPPOSITE[dir] === game.dir) return;
-      game.nextDir = dir;
+      if (!DIRS[dir]) return;
+      const lastDir = game.inputQueue.length ? game.inputQueue[game.inputQueue.length - 1] : game.nextDir;
+      if (OPPOSITE[dir] === lastDir || dir === lastDir) return;
+      game.inputQueue.push(dir);
+      if (game.inputQueue.length > 3) game.inputQueue.shift();
+      game.nextDir = game.inputQueue[0] || dir;
       if (!game.running && !game.gameOver && !game.countdown) startGame();
     }
 
@@ -943,7 +950,8 @@
     function tick() {
       if (!game.running || game.paused || game.gameOver || game.floorClear) return;
 
-      game.dir = game.nextDir;
+      game.dir = game.inputQueue.shift() || game.nextDir;
+      game.nextDir = game.inputQueue[0] || game.dir;
       const d = DIRS[game.dir];
       const head = game.snake[0];
       const next = { x: head.x + d.x, y: head.y + d.y };
@@ -1273,17 +1281,27 @@
       }
     });
 
+    const supportsPointer = "PointerEvent" in window;
     document.querySelectorAll("[data-dir]").forEach(button => {
-      button.addEventListener("click", () => setDirection(button.dataset.dir));
-      button.addEventListener("pointerdown", event => {
-        event.preventDefault();
-        button.setPointerCapture?.(event.pointerId);
-        setDirection(button.dataset.dir);
+      button.addEventListener("click", event => {
+        if (event.detail === 0) setDirection(button.dataset.dir);
       });
-      button.addEventListener("touchstart", event => {
-        event.preventDefault();
-        setDirection(button.dataset.dir);
-      }, { passive: false });
+      if (supportsPointer) {
+        button.addEventListener("pointerdown", event => {
+          event.preventDefault();
+          button.setPointerCapture?.(event.pointerId);
+          setDirection(button.dataset.dir);
+        });
+      } else {
+        button.addEventListener("touchstart", event => {
+          event.preventDefault();
+          setDirection(button.dataset.dir);
+        }, { passive: false });
+        button.addEventListener("mousedown", event => {
+          event.preventDefault();
+          setDirection(button.dataset.dir);
+        });
+      }
     });
 
     ui.start.addEventListener("click", startGame);
