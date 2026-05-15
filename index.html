@@ -1023,7 +1023,7 @@
 
     function spawnPickups() {
       spawnFood();
-      game.gold = Math.random() < Math.min(0.9, 0.45 + game.upgrades.goldChance) ? randomEmptyTile() : null;
+      game.gold = Math.random() < Math.min(0.98, 0.78 + game.upgrades.goldChance) ? randomEmptyTile() : null;
       if (game.traps.length > 0) {
         game.potion = randomEmptyTile();
         game.potionKind = "Shield";
@@ -1267,7 +1267,7 @@
       {
         name: "Gold Smell",
         text: "More gold appears in the dungeon.",
-        apply: () => game.upgrades.goldChance += 0.18
+        apply: () => game.upgrades.goldChance += 0.22
       },
       {
         name: "Longer Rush",
@@ -1337,7 +1337,7 @@
         name: "Golden Bait",
         cost: 4,
         text: "More gold appears on future floors.",
-        buy: () => game.upgrades.goldChance += 0.16
+        buy: () => game.upgrades.goldChance += 0.2
       },
       {
         name: "Potion Shelf",
@@ -1463,7 +1463,7 @@
       if (same(next, game.gold)) {
         addCoins(1);
         score(75 + game.floor * 10);
-        game.gold = Math.random() < 0.7 ? randomEmptyTile() : null;
+        game.gold = Math.random() < 0.92 ? randomEmptyTile() : null;
         audio.play("gold");
       }
 
