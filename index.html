@@ -91,8 +91,9 @@
     }
 
     canvas {
-      width: min(100%, calc(var(--tile) * 23));
-      aspect-ratio: 23 / 17;
+      width: min(100%, calc(var(--tile) * 31));
+      height: auto;
+      max-height: 72vh;
       image-rendering: pixelated;
       display: block;
       background: #080a0d;
@@ -356,6 +357,7 @@
     .s-potion { background: #75a7d8; }
     .s-haste { background: #ef8f45; }
     .s-trap { background: #9d4d48; }
+    .s-dart { background: #c9ced7; }
 
     @media (max-width: 780px) {
       body {
@@ -476,6 +478,7 @@
           <span><i class="swatch s-potion"></i>Potion effect</span>
           <span><i class="swatch s-haste"></i>Haste speeds</span>
           <span><i class="swatch s-trap"></i>Trap danger</span>
+          <span><i class="swatch s-dart"></i>Darts on floor 6</span>
         </div>
       </aside>
     </section>
@@ -588,6 +591,8 @@
       exit: null,
       traps: [],
       enemies: [],
+      projectiles: [],
+      projectileCooldown: 0,
       effect: null,
       effectTicks: 0,
       foodEaten: 0,
@@ -689,12 +694,12 @@
     }
 
     function generateDungeon(floor) {
-      const w = Math.min(23, 13 + Math.floor(floor / 2) * 2);
-      const h = Math.min(17, 11 + Math.floor(floor / 3) * 2);
+      const w = Math.min(31, 13 + Math.floor(floor / 2) * 2);
+      const h = Math.min(23, 11 + Math.floor(floor / 3) * 2);
       const map = createEmptyMap(w, h);
       const rooms = [];
-      const attempts = 90 + floor * 8;
-      const targetRooms = Math.min(7, 3 + Math.floor(floor / 2));
+      const attempts = 110 + floor * 10;
+      const targetRooms = Math.min(11, 3 + Math.floor(floor / 2));
 
       for (let i = 0; i < attempts && rooms.length < targetRooms; i++) {
         const rw = randInt(3, Math.min(6, w - 4));
@@ -729,7 +734,8 @@
       }
 
       const walkable = collectWalkable(map);
-      if (walkable.length < 42 || walkable.length > 140 || !isConnected(map, walkable) || !isCaptureFriendly(map, walkable) || hasSingleTileChokepoint(map, walkable)) {
+      const maxWalkable = Math.min(360, 140 + floor * 18);
+      if (walkable.length < 42 || walkable.length > maxWalkable || !isConnected(map, walkable) || !isCaptureFriendly(map, walkable) || hasSingleTileChokepoint(map, walkable)) {
         return generateDungeon(floor);
       }
       return { map, w, h, walkable };
@@ -873,7 +879,8 @@
         !same(p, game.potion) &&
         !same(p, game.haste) &&
         !game.traps.some(t => same(t, p)) &&
-        !game.enemies.some(e => same(e, p))
+        !game.enemies.some(e => same(e, p)) &&
+        !game.projectiles.some(d => same(d, p))
       );
       return pool.length ? { ...pool[randInt(0, pool.length - 1)] } : null;
     }
@@ -902,12 +909,12 @@
       const startBlock = game.snake.flatMap(p => [
         p, { x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 }
       ]);
-      const trapCount = Math.min(10, Math.max(1, Math.floor(game.floor * 0.85)));
+      const trapCount = Math.min(16, Math.max(1, Math.floor(game.floor * 0.95)));
       for (let i = 0; i < trapCount; i++) {
         const trap = randomEmptyTile(startBlock);
         if (trap) game.traps.push(trap);
       }
-      const enemyCount = Math.min(4, Math.floor((game.floor - 1) / 2));
+      const enemyCount = game.floor >= 3 ? Math.min(7, 1 + Math.floor((game.floor - 3) / 3)) : 0;
       for (let i = 0; i < enemyCount; i++) {
         const pos = randomEmptyTile(startBlock);
         if (pos) game.enemies.push({ ...pos, dir: Object.keys(DIRS)[randInt(0, 3)] });
@@ -937,7 +944,7 @@
         game.effectTicks = 1;
       }
       game.foodEaten = 0;
-      game.foodGoal = Math.max(7, 10 - game.upgrades.goalReduction);
+      game.foodGoal = Math.max(7, 10 + Math.floor((game.floor - 1) * 1.5) - game.upgrades.goalReduction);
       game.food = null;
       game.gold = null;
       game.potion = null;
@@ -946,6 +953,8 @@
       game.exit = null;
       game.traps = [];
       game.enemies = [];
+      game.projectiles = [];
+      game.projectileCooldown = 3;
       if (!keepScore) game.score = 0;
       spawnHazards();
       spawnPickups();
@@ -1260,6 +1269,7 @@
     function tick() {
       if (!game.running || game.paused || game.gameOver || game.floorClear || game.awaitingUpgrade) return;
 
+      updateProjectiles();
       game.dir = game.inputQueue.shift() || game.nextDir;
       game.nextDir = game.inputQueue[0] || game.dir;
       const d = DIRS[game.dir];
@@ -1271,26 +1281,29 @@
       const wallHit = !game.walkableSet.has(key(next.x, next.y));
       const trapIndex = game.traps.findIndex(t => same(t, next));
       const enemyHit = game.enemies.some(e => same(e, next));
+      const projectileHit = game.projectiles.some(p => same(p, next));
 
-      if (wallHit || bodyHit || trapIndex >= 0 || enemyHit) {
+      if (wallHit || bodyHit || trapIndex >= 0 || enemyHit || projectileHit) {
         if (hasShield()) {
           if (wallHit) next.x = head.x, next.y = head.y;
           if (trapIndex >= 0) {
             game.traps.splice(trapIndex, 1);
             if (game.upgrades.trapSense > 0) addCoins(game.upgrades.trapSense);
           }
+          if (projectileHit) game.projectiles = game.projectiles.filter(p => !same(p, next));
           score(25);
           consumeShield();
           audio.play("shield");
         } else if (game.upgrades.revive > 0) {
           game.upgrades.revive--;
+          if (projectileHit) game.projectiles = game.projectiles.filter(p => !same(p, next));
           game.effect = "Shield";
           game.effectTicks = 1;
           showMessage("Second Chance", 900);
           audio.play("shield");
           return;
         } else {
-          const reason = wallHit ? "Stone wall" : bodyHit ? "Coiled into yourself" : trapIndex >= 0 ? "Trap sprung" : "Enemy strike";
+          const reason = wallHit ? "Stone wall" : bodyHit ? "Coiled into yourself" : trapIndex >= 0 ? "Trap sprung" : enemyHit ? "Enemy strike" : "Dart to the face";
           endRun(reason);
           return;
         }
@@ -1347,16 +1360,79 @@
       }
 
       moveEnemies();
+      if (game.projectiles.some(p => same(p, game.snake[0]))) {
+        if (hasShield()) {
+          game.projectiles = game.projectiles.filter(p => !same(p, game.snake[0]));
+          consumeShield();
+          audio.play("shield");
+        } else if (game.upgrades.revive > 0) {
+          game.upgrades.revive--;
+          game.projectiles = game.projectiles.filter(p => !same(p, game.snake[0]));
+          showMessage("Second Chance", 900);
+        } else {
+          endRun("Dart to the face");
+          return;
+        }
+      }
       updateHud();
       if (game.foodEaten >= game.foodGoal) completeFloor();
+    }
+
+    function updateProjectiles() {
+      if (game.floor < 6) return;
+      const moved = [];
+      for (const dart of game.projectiles) {
+        const d = DIRS[dart.dir];
+        const next = { x: dart.x + d.x, y: dart.y + d.y, dir: dart.dir, life: dart.life - 1 };
+        if (next.life > 0 && game.walkableSet.has(key(next.x, next.y))) moved.push(next);
+      }
+      game.projectiles = moved;
+      game.projectileCooldown--;
+      if (game.projectileCooldown <= 0) {
+        fireProjectile();
+        game.projectileCooldown = Math.max(2, 7 - Math.floor(game.floor / 3));
+      }
+    }
+
+    function fireProjectile() {
+      const head = game.snake[0];
+      const lanes = [];
+      for (const dir of Object.keys(DIRS)) {
+        const d = DIRS[dir];
+        for (let i = 5; i >= 2; i--) {
+          const p = { x: head.x - d.x * i, y: head.y - d.y * i };
+          if (game.walkableSet.has(key(p.x, p.y)) && clearLine(p, head, dir)) {
+            lanes.push({ ...p, dir, life: i + 3 });
+            break;
+          }
+        }
+      }
+      if (lanes.length) game.projectiles.push(lanes[randInt(0, lanes.length - 1)]);
+    }
+
+    function clearLine(from, to, dir) {
+      const d = DIRS[dir];
+      let p = { x: from.x, y: from.y };
+      while (!same(p, to)) {
+        if (!game.walkableSet.has(key(p.x, p.y))) return false;
+        p = { x: p.x + d.x, y: p.y + d.y };
+      }
+      return true;
     }
 
     function moveEnemies() {
       const snake = occupiedSet();
       for (const enemy of game.enemies) {
         if (game.upgrades.enemySlow > 0 && Math.random() < game.upgrades.enemySlow) continue;
-        if (Math.random() < 0.35) enemy.dir = Object.keys(DIRS)[randInt(0, 3)];
-        const dirs = shuffle([enemy.dir, ...Object.keys(DIRS).filter(d => d !== enemy.dir)]);
+        if (game.floor >= 9 && Math.random() < 0.65) {
+          const head = game.snake[0];
+          const horizontal = head.x < enemy.x ? "left" : "right";
+          const vertical = head.y < enemy.y ? "up" : "down";
+          enemy.dir = Math.abs(head.x - enemy.x) > Math.abs(head.y - enemy.y) ? horizontal : vertical;
+        } else if (Math.random() < 0.35) {
+          enemy.dir = Object.keys(DIRS)[randInt(0, 3)];
+        }
+        const dirs = game.floor >= 9 ? [enemy.dir, ...shuffle(Object.keys(DIRS).filter(d => d !== enemy.dir))] : shuffle([enemy.dir, ...Object.keys(DIRS).filter(d => d !== enemy.dir)]);
         for (const dir of dirs) {
           const d = DIRS[dir];
           const next = { x: enemy.x + d.x, y: enemy.y + d.y };
@@ -1449,6 +1525,19 @@
       drawPickup(game.potion, "#75a7d8", "potion");
       drawPickup(game.haste, "#ef8f45", "haste");
       drawExit();
+
+      for (const dart of game.projectiles) {
+        const x = dart.x * TILE;
+        const y = dart.y * TILE;
+        ctx.fillStyle = "#c9ced7";
+        if (dart.dir === "left" || dart.dir === "right") {
+          ctx.fillRect(x + 7, y + 14, 18, 4);
+          ctx.fillRect(dart.dir === "right" ? x + 21 : x + 7, y + 11, 4, 10);
+        } else {
+          ctx.fillRect(x + 14, y + 7, 4, 18);
+          ctx.fillRect(x + 11, dart.dir === "down" ? y + 21 : y + 7, 10, 4);
+        }
+      }
 
       for (const enemy of game.enemies) {
         drawRect(enemy.x, enemy.y, "#6e394c", 5);
