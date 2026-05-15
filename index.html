@@ -680,26 +680,56 @@
       return false;
     }
 
+    function hasClearance(p, dir, steps = 2) {
+      const d = DIRS[dir];
+      for (let i = 1; i <= steps; i++) {
+        if (!game.walkableSet.has(key(p.x + d.x * i, p.y + d.y * i))) return false;
+      }
+      return true;
+    }
+
+    function hasSpawnPocket(p) {
+      return Object.keys(DIRS).every(dir => hasClearance(p, dir, 2));
+    }
+
+    function spawnOption(head, dir) {
+      const d = DIRS[dir];
+      const back = DIRS[OPPOSITE[dir]];
+      return {
+        dir,
+        body: [
+          { x: head.x, y: head.y },
+          { x: head.x + back.x, y: head.y + back.y },
+          { x: head.x + back.x * 2, y: head.y + back.y * 2 }
+        ],
+        ahead: [
+          { x: head.x + d.x, y: head.y + d.y },
+          { x: head.x + d.x * 2, y: head.y + d.y * 2 }
+        ]
+      };
+    }
+
     function placeSnake() {
-      const candidates = game.walkable.filter(p => {
-        const left = game.map[p.y]?.[p.x - 1] === FLOOR;
-        const right = game.map[p.y]?.[p.x + 1] === FLOOR;
-        const up = game.map[p.y - 1]?.[p.x] === FLOOR;
-        const down = game.map[p.y + 1]?.[p.x] === FLOOR;
-        return (left && right) || (up && down);
-      });
-      const head = candidates[randInt(0, candidates.length - 1)] || game.walkable[0];
-      const options = [
-        { dir: "right", next: { x: head.x + 1, y: head.y }, body: [{ x: head.x, y: head.y }, { x: head.x - 1, y: head.y }, { x: head.x - 2, y: head.y }] },
-        { dir: "left", next: { x: head.x - 1, y: head.y }, body: [{ x: head.x, y: head.y }, { x: head.x + 1, y: head.y }, { x: head.x + 2, y: head.y }] },
-        { dir: "down", next: { x: head.x, y: head.y + 1 }, body: [{ x: head.x, y: head.y }, { x: head.x, y: head.y - 1 }, { x: head.x, y: head.y - 2 }] },
-        { dir: "up", next: { x: head.x, y: head.y - 1 }, body: [{ x: head.x, y: head.y }, { x: head.x, y: head.y + 1 }, { x: head.x, y: head.y + 2 }] }
-      ].filter(o => game.walkableSet.has(key(o.next.x, o.next.y)) && o.body.every(p => game.walkableSet.has(key(p.x, p.y))));
-      const picked = options[randInt(0, options.length - 1)] || { dir: "right", body: [{ ...head }] };
+      const candidates = game.walkable.filter(hasSpawnPocket);
+      if (!candidates.length) return false;
+      const shuffledCandidates = shuffle([...candidates]);
+      let picked = null;
+      for (const head of shuffledCandidates) {
+        const options = shuffle(Object.keys(DIRS).map(dir => spawnOption(head, dir))).filter(o =>
+          o.body.every(p => game.walkableSet.has(key(p.x, p.y))) &&
+          o.ahead.every(p => game.walkableSet.has(key(p.x, p.y)))
+        );
+        if (options.length) {
+          picked = options[0];
+          break;
+        }
+      }
+      if (!picked) return false;
       game.snake = picked.body;
       game.dir = picked.dir;
       game.nextDir = picked.dir;
       game.grow = Math.max(0, 3 - game.snake.length);
+      return true;
     }
 
     function occupiedSet() {
@@ -762,7 +792,7 @@
       }
     }
 
-    function setupFloor(keepScore = true) {
+    function setupFloor(keepScore = true, attempts = 0) {
       const dungeon = generateDungeon(game.floor);
       game.map = dungeon.map;
       game.width = dungeon.w;
@@ -771,7 +801,12 @@
       game.walkableSet = new Set(game.walkable.map(p => key(p.x, p.y)));
       canvas.width = game.width * TILE;
       canvas.height = game.height * TILE;
-      placeSnake();
+      if (!placeSnake()) {
+        if (attempts < 40) return setupFloor(keepScore, attempts + 1);
+        game.snake = [{ ...game.walkable[0] }];
+        game.dir = "right";
+        game.nextDir = "right";
+      }
       game.effect = null;
       game.effectTicks = 0;
       game.foodEaten = 0;
