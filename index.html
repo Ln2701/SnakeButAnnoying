@@ -159,6 +159,18 @@
       gap: 10px;
     }
 
+    .shop-row {
+      display: grid;
+      gap: 8px;
+    }
+
+    .shop-row h3 {
+      margin: 2px 0 0;
+      color: #eef2e8;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+    }
+
     .upgrade-card {
       min-height: 112px;
       padding: 10px;
@@ -179,6 +191,17 @@
       color: var(--muted);
       font-size: 0.74rem;
       line-height: 1.25;
+    }
+
+    .upgrade-card em {
+      color: var(--accent);
+      font-style: normal;
+      font-size: 0.78rem;
+    }
+
+    .upgrade-card.disabled {
+      opacity: 0.48;
+      cursor: not-allowed;
     }
 
     aside {
@@ -399,15 +422,23 @@
         <canvas id="game" width="736" height="544" aria-label="SnakeButAnnoying game canvas"></canvas>
         <div class="banner" id="banner">Press Start</div>
         <div class="upgrade-panel" id="upgradePanel" aria-live="polite">
-          <h2>Floor Cleared</h2>
-          <p>Pick one upgrade before the next layer gets worse.</p>
-          <div class="upgrade-options" id="upgradeOptions"></div>
+          <h2>Dungeon Shop</h2>
+          <p id="shopLine">Spend coins, then pick one free upgrade.</p>
+          <div class="shop-row">
+            <h3>Shop</h3>
+            <div class="upgrade-options" id="shopOptions"></div>
+          </div>
+          <div class="shop-row">
+            <h3>Free Upgrade</h3>
+            <div class="upgrade-options" id="upgradeOptions"></div>
+          </div>
         </div>
       </div>
 
       <aside>
         <div class="hud">
           <div class="stat"><span>Score</span><strong id="score">0</strong></div>
+          <div class="stat"><span>Coins</span><strong id="coins">0</strong></div>
           <div class="stat"><span>Best</span><strong id="best">0</strong></div>
           <div class="stat"><span>Floor</span><strong id="floor">1</strong></div>
           <div class="stat"><span>Length</span><strong id="length">3</strong></div>
@@ -457,6 +488,7 @@
     const ctx = canvas.getContext("2d");
     const ui = {
       score: document.getElementById("score"),
+      coins: document.getElementById("coins"),
       best: document.getElementById("best"),
       floor: document.getElementById("floor"),
       length: document.getElementById("length"),
@@ -466,6 +498,8 @@
       banner: document.getElementById("banner"),
       upgradePanel: document.getElementById("upgradePanel"),
       upgradeOptions: document.getElementById("upgradeOptions"),
+      shopOptions: document.getElementById("shopOptions"),
+      shopLine: document.getElementById("shopLine"),
       captureLine: document.getElementById("captureLine"),
       captureFill: document.getElementById("captureFill"),
       remainingLine: document.getElementById("remainingLine"),
@@ -537,6 +571,7 @@
       height: 13,
       floor: 1,
       score: 0,
+      coins: 0,
       best: Number(localStorage.getItem(STORAGE_KEY) || 0),
       map: [],
       walkable: [],
@@ -572,13 +607,21 @@
       secretUnlocked: localStorage.getItem(SECRET_KEY) === "yes",
       secretFileReady: false,
       deaths: Number(localStorage.getItem(DEATHS_KEY) || 0),
+      shopStock: [],
       upgrades: {
         foodGrow: 0,
         scoreBonus: 0,
         slowBase: 0,
         goalReduction: 0,
         startShield: 0,
-        goldChance: 0
+        goldChance: 0,
+        magnet: 0,
+        trapSense: 0,
+        potionChance: 0,
+        hasteDuration: 0,
+        enemySlow: 0,
+        revive: 0,
+        coinBonus: 0
       }
     };
 
@@ -837,12 +880,12 @@
 
     function spawnPickups() {
       spawnFood();
-      game.gold = Math.random() < Math.min(0.85, 0.45 + game.upgrades.goldChance) ? randomEmptyTile() : null;
+      game.gold = Math.random() < Math.min(0.9, 0.45 + game.upgrades.goldChance) ? randomEmptyTile() : null;
       if (game.traps.length > 0) {
         game.potion = randomEmptyTile();
         game.potionKind = "Shield";
       } else {
-        game.potion = Math.random() < 0.35 ? randomEmptyTile() : null;
+        game.potion = Math.random() < Math.min(0.8, 0.35 + game.upgrades.potionChance) ? randomEmptyTile() : null;
         game.potionKind = null;
       }
       game.haste = Math.random() < 0.5 ? randomEmptyTile() : null;
@@ -915,6 +958,7 @@
     function newRun() {
       game.floor = 1;
       game.score = 0;
+      game.coins = 0;
       game.running = false;
       game.paused = false;
       game.gameOver = false;
@@ -928,7 +972,14 @@
         slowBase: 0,
         goalReduction: 0,
         startShield: 0,
-        goldChance: 0
+        goldChance: 0,
+        magnet: 0,
+        trapSense: 0,
+        potionChance: 0,
+        hasteDuration: 0,
+        enemySlow: 0,
+        revive: 0,
+        coinBonus: 0
       };
       ui.upgradePanel.classList.remove("show");
       game.acc = 0;
@@ -1005,6 +1056,11 @@
       }
     }
 
+    function addCoins(amount) {
+      game.coins += Math.max(0, amount + game.upgrades.coinBonus);
+      updateHud();
+    }
+
     function endRun(reason) {
       const deathsBefore = game.deaths;
       game.deaths++;
@@ -1063,22 +1119,129 @@
         name: "Gold Smell",
         text: "More gold appears in the dungeon.",
         apply: () => game.upgrades.goldChance += 0.18
+      },
+      {
+        name: "Longer Rush",
+        text: "Haste lasts longer when collected.",
+        apply: () => game.upgrades.hasteDuration += 16
+      },
+      {
+        name: "Trap Reading",
+        text: "Earn coins whenever shield breaks a trap.",
+        apply: () => game.upgrades.trapSense += 1
+      },
+      {
+        name: "Bottle Luck",
+        text: "Potions appear more often on safe floors.",
+        apply: () => game.upgrades.potionChance += 0.14
+      },
+      {
+        name: "Sticky Coins",
+        text: "Gold pickups pay one extra coin.",
+        apply: () => game.upgrades.coinBonus += 1
+      },
+      {
+        name: "Lazy Monsters",
+        text: "Enemies hesitate more often.",
+        apply: () => game.upgrades.enemySlow += 0.14
+      }
+    ];
+
+    const shopPool = [
+      {
+        name: "Apple Crate",
+        cost: 3,
+        text: "Immediately count one food toward this floor.",
+        buy: () => {
+          game.foodEaten = Math.min(game.foodGoal - 1, game.foodEaten + 1);
+          score(12);
+        }
+      },
+      {
+        name: "Shield Charm",
+        cost: 4,
+        text: "Gain a one-hit shield right now.",
+        buy: () => {
+          game.effect = "Shield";
+          game.effectTicks = 1;
+        }
+      },
+      {
+        name: "Coin Polisher",
+        cost: 5,
+        text: "All future coin pickups pay one more.",
+        buy: () => game.upgrades.coinBonus += 1
+      },
+      {
+        name: "Map Reroll",
+        cost: 4,
+        text: "Next floor needs one less food, down to 7.",
+        buy: () => game.upgrades.goalReduction = Math.min(3, game.upgrades.goalReduction + 1)
+      },
+      {
+        name: "Soft Shoes",
+        cost: 5,
+        text: "Permanent slower base movement.",
+        buy: () => game.upgrades.slowBase += 10
+      },
+      {
+        name: "Golden Bait",
+        cost: 4,
+        text: "More gold appears on future floors.",
+        buy: () => game.upgrades.goldChance += 0.16
+      },
+      {
+        name: "Potion Shelf",
+        cost: 6,
+        text: "Potions become more common.",
+        buy: () => game.upgrades.potionChance += 0.16
+      },
+      {
+        name: "Second Chance",
+        cost: 8,
+        text: "Survive one fatal hit later this run.",
+        buy: () => game.upgrades.revive += 1
       }
     ];
 
     function showUpgradePage() {
       game.awaitingUpgrade = true;
       ui.banner.classList.remove("show");
+      ui.shopLine.textContent = `Coins: ${game.coins}. Buy anything, then choose one free upgrade.`;
+      game.shopStock = shuffle([...shopPool]).slice(0, 4);
+      renderShop();
       ui.upgradeOptions.innerHTML = "";
-      for (const upgrade of shuffle([...upgradePool]).slice(0, 3)) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "upgrade-card";
-        button.innerHTML = `<strong>${upgrade.name}</strong><span>${upgrade.text}</span>`;
-        button.addEventListener("click", () => chooseUpgrade(upgrade));
-        ui.upgradeOptions.appendChild(button);
+      for (const upgrade of shuffle([...upgradePool]).slice(0, 4)) {
+        ui.upgradeOptions.appendChild(createCard(upgrade.name, "Free", upgrade.text, () => chooseUpgrade(upgrade)));
       }
       ui.upgradePanel.classList.add("show");
+    }
+
+    function createCard(name, label, text, action, disabled = false) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "upgrade-card" + (disabled ? " disabled" : "");
+      button.disabled = disabled;
+      button.innerHTML = `<strong>${name}</strong><em>${label}</em><span>${text}</span>`;
+      button.addEventListener("click", action);
+      return button;
+    }
+
+    function renderShop() {
+      ui.shopOptions.innerHTML = "";
+      for (const item of game.shopStock) {
+        const disabled = game.coins < item.cost;
+        ui.shopOptions.appendChild(createCard(item.name, `${item.cost} coins`, item.text, () => buyShopItem(item), disabled));
+      }
+    }
+
+    function buyShopItem(item) {
+      if (game.coins < item.cost) return;
+      game.coins -= item.cost;
+      item.buy();
+      ui.shopLine.textContent = `Coins: ${game.coins}. Bought ${item.name}.`;
+      renderShop();
+      updateHud();
     }
 
     function chooseUpgrade(upgrade) {
@@ -1112,10 +1275,20 @@
       if (wallHit || bodyHit || trapIndex >= 0 || enemyHit) {
         if (hasShield()) {
           if (wallHit) next.x = head.x, next.y = head.y;
-          if (trapIndex >= 0) game.traps.splice(trapIndex, 1);
+          if (trapIndex >= 0) {
+            game.traps.splice(trapIndex, 1);
+            if (game.upgrades.trapSense > 0) addCoins(game.upgrades.trapSense);
+          }
           score(25);
           consumeShield();
           audio.play("shield");
+        } else if (game.upgrades.revive > 0) {
+          game.upgrades.revive--;
+          game.effect = "Shield";
+          game.effectTicks = 1;
+          showMessage("Second Chance", 900);
+          audio.play("shield");
+          return;
         } else {
           const reason = wallHit ? "Stone wall" : bodyHit ? "Coiled into yourself" : trapIndex >= 0 ? "Trap sprung" : "Enemy strike";
           endRun(reason);
@@ -1134,6 +1307,7 @@
       }
 
       if (same(next, game.gold)) {
+        addCoins(1);
         score(75 + game.floor * 10);
         game.gold = Math.random() < 0.7 ? randomEmptyTile() : null;
         audio.play("gold");
@@ -1156,7 +1330,7 @@
 
       if (same(next, game.haste)) {
         game.effect = "Haste";
-        game.effectTicks = 46;
+        game.effectTicks = 46 + game.upgrades.hasteDuration;
         game.haste = Math.random() < 0.65 ? randomEmptyTile() : null;
         score(45);
         audio.play("haste");
@@ -1180,6 +1354,7 @@
     function moveEnemies() {
       const snake = occupiedSet();
       for (const enemy of game.enemies) {
+        if (game.upgrades.enemySlow > 0 && Math.random() < game.upgrades.enemySlow) continue;
         if (Math.random() < 0.35) enemy.dir = Object.keys(DIRS)[randInt(0, 3)];
         const dirs = shuffle([enemy.dir, ...Object.keys(DIRS).filter(d => d !== enemy.dir)]);
         for (const dir of dirs) {
@@ -1222,6 +1397,7 @@
     function updateHud() {
       const percent = Math.floor((game.foodEaten / game.foodGoal) * 100);
       ui.score.textContent = game.score;
+      ui.coins.textContent = game.coins;
       ui.best.textContent = game.best;
       ui.floor.textContent = game.floor;
       ui.length.textContent = game.snake.length;
