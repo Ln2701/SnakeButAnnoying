@@ -1133,7 +1133,7 @@
         ? "Download reward audio"
         : unlocked
           ? "Secret file missing"
-          : `Secret unlocks on layer 3 or ${Math.max(0, 10 - game.deaths)} deaths`;
+          : "Secret unlocks on layer 3";
     }
 
     function unlockSecret() {
@@ -1236,7 +1236,7 @@
     ui.download.addEventListener("click", event => {
       if (ui.download.getAttribute("aria-disabled") === "true") {
         event.preventDefault();
-        showMessage(game.secretUnlocked ? "Secret file not found" : "Reach layer 3 or die 10 times", 1200);
+        showMessage(game.secretUnlocked ? "Secret file not found" : "Reach layer 3 to unlock", 1200);
       }
     });
 
