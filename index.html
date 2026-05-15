@@ -48,6 +48,7 @@
       display: grid;
       place-items: center;
       padding: 18px;
+      overscroll-behavior: none;
     }
 
     .shell {
@@ -246,12 +247,15 @@
       grid-template-rows: repeat(3, 46px);
       justify-content: center;
       gap: 6px;
+      touch-action: none;
+      user-select: none;
     }
 
     .dpad button {
       min-height: 46px;
       font-size: 1.25rem;
       padding: 0;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .dpad .up { grid-column: 2; }
@@ -283,7 +287,10 @@
     .s-trap { background: #9d4d48; }
 
     @media (max-width: 780px) {
-      body { padding: 10px; }
+      body {
+        padding: 10px 10px 128px;
+        place-items: start center;
+      }
       header {
         align-items: start;
         flex-direction: column;
@@ -295,12 +302,35 @@
       .stat { min-height: 54px; }
       .controls { grid-template-columns: repeat(4, 1fr); }
       canvas { width: min(100%, 96vw); }
+      .dpad {
+        position: fixed;
+        left: 50%;
+        bottom: max(10px, env(safe-area-inset-bottom));
+        z-index: 5;
+        width: 236px;
+        grid-template-columns: repeat(3, 64px);
+        grid-template-rows: repeat(3, 52px);
+        padding: 8px;
+        border: 1px solid rgba(70, 81, 94, 0.9);
+        background: rgba(13, 16, 20, 0.88);
+        box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+        transform: translateX(-50%);
+        backdrop-filter: blur(8px);
+      }
+      .dpad button {
+        min-height: 52px;
+        font-size: 1.45rem;
+      }
     }
 
     @media (max-width: 520px) {
       .hud { grid-template-columns: 1fr 1fr; }
       .controls { grid-template-columns: 1fr 1fr; }
       .legend { grid-template-columns: 1fr; }
+      .dpad {
+        width: 224px;
+        grid-template-columns: repeat(3, 60px);
+      }
     }
   </style>
 </head>
@@ -1221,6 +1251,15 @@
 
     document.querySelectorAll("[data-dir]").forEach(button => {
       button.addEventListener("click", () => setDirection(button.dataset.dir));
+      button.addEventListener("pointerdown", event => {
+        event.preventDefault();
+        button.setPointerCapture?.(event.pointerId);
+        setDirection(button.dataset.dir);
+      });
+      button.addEventListener("touchstart", event => {
+        event.preventDefault();
+        setDirection(button.dataset.dir);
+      }, { passive: false });
     });
 
     ui.start.addEventListener("click", startGame);
